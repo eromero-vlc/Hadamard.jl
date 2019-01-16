@@ -62,6 +62,7 @@ end
 
 const libfftw = isdefined(FFTW, :libfftw) ? FFTW.libfftw : FFTW.libfftw3
 const libfftwf = isdefined(FFTW, :libfftwf) ? FFTW.libfftwf : FFTW.libfftw3f
+const plannerLock = Base.Threads.SpinLock()
 
 for (Tr,Tc,fftw,lib) in ((:Float64,:ComplexF64,"fftw",libfftw),
                          (:Float32,:ComplexF32,"fftwf",libfftwf))
@@ -71,12 +72,14 @@ for (Tr,Tc,fftw,lib) in ((:Float64,:ComplexF64,"fftw",libfftw),
         set_timelimit($Tr, timelimit)
         dims, howmany = dims_howmany(X, Y, [size(X)...], region)
         dims = hadamardize(dims, bitreverse)
+        lock(plannerLock)
         plan = ccall(($(string(fftw,"_plan_guru64_dft")),$lib),
                      PlanPtr,
                      (Int32, Ptr{Int}, Int32, Ptr{Int},
                       Ptr{$Tc}, Ptr{$Tc}, Int32, UInt32),
                      size(dims,2), dims, size(howmany,2), howmany,
                      X, Y, FFTW.FORWARD, flags)
+        unlock(plannerLock)
         set_timelimit($Tr, NO_TIMELIMIT)
         if plan == C_NULL
             if $(occursin("libmkl", lib))
@@ -96,12 +99,14 @@ for (Tr,Tc,fftw,lib) in ((:Float64,:ComplexF64,"fftw",libfftw),
         dims = hadamardize(dims, bitreverse)
         kind = Array{Int32}(undef, size(dims,2))
         kind .= R2HC
+        lock(plannerLock)
         plan = ccall(($(string(fftw,"_plan_guru64_r2r")),$lib),
                      PlanPtr,
                      (Int32, Ptr{Int}, Int32, Ptr{Int},
                       Ptr{$Tr}, Ptr{$Tr}, Ptr{Int32}, UInt32),
                      size(dims,2), dims, size(howmany,2), howmany,
                      X, Y, kind, flags)
+        unlock(plannerLock)
         set_timelimit($Tr, NO_TIMELIMIT)
         if plan == C_NULL
             if $(occursin("libmkl", lib))
